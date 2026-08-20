@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { Product, SpecRow, Verdict } from "@/lib/types/product";
+import { SpecRow } from "@/lib/types/product";
 
 export type ParsedDuel = {
   a: { name: string; score: number };
@@ -34,15 +34,16 @@ export function parseLedgerTable(html: string): SpecRow[] {
     const bText = bCell.clone().find(".dot").remove().end().text().trim();
 
     const winnerName = $row.find("td.res .pill").text().trim();
+    // Versus udah nentuin pemenang tiap baris langsung lewat winnerName,
+    // jadi kita tinggal cocokin ke nama produk A/B — bukan bandingin angka manual.
+    const aIsWinner = Boolean(winnerName) && aText.includes(winnerName.split(" ").pop() ?? "\u0000");
 
     rows.push({
       label,
       category: $row.attr("data-spec") ?? "",
       a: { raw: aText || "—" },
       b: { raw: bText || "—" },
-      // higherIsBetter sengaja nggak dihitung dari angka;
-      // Versus udah kasih pemenangnya langsung lewat winnerName di atas.
-      higherIsBetter: undefined,
+      winnerSide: winnerName ? (aIsWinner ? "a" : "b") : undefined,
     });
   });
 
