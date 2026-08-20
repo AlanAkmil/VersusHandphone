@@ -54,8 +54,10 @@ export async function fetchAndParseDuel(url: string): Promise<ParsedDuel> {
   const res = await fetch(url, {
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
     },
   });
   const html = await res.text();
@@ -93,6 +95,7 @@ export type ScrapeDebugResult = {
     sampleRows: { label: string; a: string; b: string }[];
   } | null;
   rawLength: number;
+  rawHtmlPreview: string;
   reasonsWindow: string | null;
   recordWindow: string | null;
   rulingWindow: string | null;
@@ -103,10 +106,18 @@ export type ScrapeDebugResult = {
 export async function debugScrapeVersus(url: string): Promise<ScrapeDebugResult> {
   const res = await fetch(url, {
     headers: {
-      // Beberapa situs nolak request tanpa User-Agent browser biasa.
+      // Header lebih lengkap biar keliatan kayak browser asli, bukan bot.
       "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Upgrade-Insecure-Requests": "1",
     },
   });
 
@@ -199,6 +210,7 @@ export async function debugScrapeVersus(url: string): Promise<ScrapeDebugResult>
         ? { headingsFound, tableRowsFound: sampleRows.length, sampleRows }
         : null,
     rawLength: html.length,
+    rawHtmlPreview: html.slice(0, 1500),
     reasonsWindow,
     recordWindow,
     rulingWindow,
