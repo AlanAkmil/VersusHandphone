@@ -49,6 +49,12 @@ export function parseLedgerTable(html: string): SpecRow[] {
   const $ = cheerio.load(html);
   const rows: SpecRow[] = [];
 
+  // Nama produk sisi A/B diambil dari header tabel — paling akurat,
+  // bukan nebak dari teks nilai spek (itu bug lama).
+  const headerCells = $("#ledger table thead th");
+  const aName = headerCells.eq(1).text().trim();
+  const bName = headerCells.eq(2).text().trim();
+
   $("#ledger table tbody tr").each((_, el) => {
     const $row = $(el);
     const label = $row.find("td.metric").first().text().trim();
@@ -59,14 +65,16 @@ export function parseLedgerTable(html: string): SpecRow[] {
     const bText = extractCellValue(valCells.eq(1));
 
     const winnerName = $row.find("td.res .pill").text().trim();
-    const aIsWinner = Boolean(winnerName) && aText.includes(winnerName.split(" ").pop() ?? "\u0000");
+    let winnerSide: "a" | "b" | undefined;
+    if (winnerName === aName) winnerSide = "a";
+    else if (winnerName === bName) winnerSide = "b";
 
     rows.push({
       label,
       category: $row.attr("data-spec") ?? "",
       a: { raw: aText },
       b: { raw: bText },
-      winnerSide: winnerName ? (aIsWinner ? "a" : "b") : undefined,
+      winnerSide,
     });
   });
 
@@ -87,12 +95,16 @@ export function parseLedgerTable(html: string): SpecRow[] {
 export function parseRuling(html: string): ParsedVerdict | null {
   const $ = cheerio.load(html);
 
+  const names = $(".duo .side h1, .duo .side .h1")
+    .map((_, el) => $(el).text().trim())
+    .get();
+  const aName = names[0] ?? "";
+  const bName = names[1] ?? "";
+
   const winnerName = $(".ruling .win").first().text().trim();
   if (!winnerName) return null;
 
   const reasons: VerdictReason[] = [];
-  let winnerSide: "a" | "b" = "a";
-
   $(".ruling button.tok").each((_, el) => {
     const $tok = $(el);
     const term = $tok.clone().find("sup").remove().end().text().trim();
@@ -109,8 +121,9 @@ export function parseRuling(html: string): ParsedVerdict | null {
     reasons.push({ term, count, side, factLabels });
   });
 
-  // Pemenang = sisi yang paling banyak nyumbang reasons di awal paragraf.
-  if (reasons.length > 0) winnerSide = reasons[0].side;
+  // Cocokin nama pemenang ke nama produk asli (dari .duo), bukan nebak dari urutan reasons.
+  const winnerSide: "a" | "b" =
+    winnerName === aName ? "a" : winnerName === bName ? "b" : reasons[0]?.side ?? "a";
 
   return { winnerSide, winnerName, reasons };
 }
