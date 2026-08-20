@@ -18,11 +18,11 @@ export type SpecRow = {
 export type Product = {
   slug: string;
   name: string;
-  brand: string;
+  brand?: string;
   image?: string;
-  releaseYear: number;
+  releaseYear?: number;
   score: number;
-  priceLabel: string;
+  priceLabel?: string;
 };
 
 export type Evidence = {
