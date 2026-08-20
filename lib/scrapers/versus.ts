@@ -1,20 +1,48 @@
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 import { SpecRow } from "@/lib/types/product";
 import { fetchViaZenRows } from "./proxy-fetch";
+
+export type VerdictReason = {
+  term: string;
+  count: number;
+  side: "a" | "b";
+  factLabels: string[];
+};
+
+export type ParsedVerdict = {
+  winnerSide: "a" | "b";
+  winnerName: string;
+  reasons: VerdictReason[];
+};
 
 export type ParsedDuel = {
   a: { name: string; score: number };
   b: { name: string; score: number };
   specs: SpecRow[];
+  verdict: ParsedVerdict | null;
 };
 
 /**
+ * Ambil nilai satu sel <td class="val"> — bisa berupa teks biasa
+ * atau ikon boolean <span title="yes"|"no">.
+ */
+function extractCellValue($cell: cheerio.Cheerio<AnyNode>): string {
+  const boolEl = $cell.find('[title="yes"], [title="no"]').first();
+  if (boolEl.length) {
+    return boolEl.attr("title") === "yes" ? "Ya" : "Tidak";
+  }
+  const text = $cell.clone().find(".dot").remove().end().text().trim();
+  return text || "—";
+}
+
+/**
  * Parser produksi buat tabel #ledger di versus.com.
- * Struktur (per 20 Aug 2026):
+ * Struktur (per 21 Aug 2026):
  *   <tr data-spec="..." data-desc="..." data-pct="..">
  *     <td class="metric">Label</td>
- *     <td class="val"><span class="dot" style="background:var(--cobalt)">2,600 nits</td>  ← sisi A
- *     <td class="val">...</td>                                                             ← sisi B
+ *     <td class="val">2,600 nits atau <span title="yes|no"></span></td>  ← sisi A
+ *     <td class="val">...</td>                                           ← sisi B
  *     <td class="res"><span class="pill w">Nama Pemenang</span></td>
  */
 export function parseLedgerTable(html: string): SpecRow[] {
@@ -27,23 +55,17 @@ export function parseLedgerTable(html: string): SpecRow[] {
     if (!label) return;
 
     const valCells = $row.find("td.val");
-    const aCell = valCells.eq(0);
-    const bCell = valCells.eq(1);
-
-    // Buang <span class="dot"> biar sisa teksnya bersih.
-    const aText = aCell.clone().find(".dot").remove().end().text().trim();
-    const bText = bCell.clone().find(".dot").remove().end().text().trim();
+    const aText = extractCellValue(valCells.eq(0));
+    const bText = extractCellValue(valCells.eq(1));
 
     const winnerName = $row.find("td.res .pill").text().trim();
-    // Versus udah nentuin pemenang tiap baris langsung lewat winnerName,
-    // jadi kita tinggal cocokin ke nama produk A/B — bukan bandingin angka manual.
     const aIsWinner = Boolean(winnerName) && aText.includes(winnerName.split(" ").pop() ?? "\u0000");
 
     rows.push({
       label,
       category: $row.attr("data-spec") ?? "",
-      a: { raw: aText || "—" },
-      b: { raw: bText || "—" },
+      a: { raw: aText },
+      b: { raw: bText },
       winnerSide: winnerName ? (aIsWinner ? "a" : "b") : undefined,
     });
   });
@@ -51,11 +73,54 @@ export function parseLedgerTable(html: string): SpecRow[] {
   return rows;
 }
 
+/**
+ * Parser buat section .ruling (paragraf verdict) + .receipt (bukti tiap kategori).
+ * Struktur:
+ *   <div class="ruling"><p>Get the <span class="win">Nama</span> — it wins
+ *     <button class="tok" data-r="performance-0" style="border-color:var(--cobalt)">
+ *       Performance<sup>11</sup></button>, ...</p></div>
+ *   <div class="receipt" id="r-performance-0">
+ *     <div class="rrow"><span class="rlbl">Label fakta</span>...</div>
+ *   </div>
+ * Warna cobalt = sisi A, magenta = sisi B (konsisten sepanjang halaman).
+ */
+export function parseRuling(html: string): ParsedVerdict | null {
+  const $ = cheerio.load(html);
+
+  const winnerName = $(".ruling .win").first().text().trim();
+  if (!winnerName) return null;
+
+  const reasons: VerdictReason[] = [];
+  let winnerSide: "a" | "b" = "a";
+
+  $(".ruling button.tok").each((_, el) => {
+    const $tok = $(el);
+    const term = $tok.clone().find("sup").remove().end().text().trim();
+    const count = Number($tok.find("sup").text().trim()) || 0;
+    const style = $tok.attr("style") ?? "";
+    const side: "a" | "b" = style.includes("cobalt") ? "a" : "b";
+
+    const dataR = $tok.attr("data-r") ?? "";
+    const factLabels: string[] = [];
+    $(`#r-${dataR} .rrow .rlbl`).each((i, lbl) => {
+      if (i < 4) factLabels.push($(lbl).text().trim());
+    });
+
+    reasons.push({ term, count, side, factLabels });
+  });
+
+  // Pemenang = sisi yang paling banyak nyumbang reasons di awal paragraf.
+  if (reasons.length > 0) winnerSide = reasons[0].side;
+
+  return { winnerSide, winnerName, reasons };
+}
+
 export async function fetchAndParseDuel(url: string): Promise<ParsedDuel> {
   const { html } = await fetchViaZenRows(url);
   const $ = cheerio.load(html);
 
   const specs = parseLedgerTable(html);
+  const verdict = parseRuling(html);
 
   const names = $(".duo .side h1, .duo .side .h1")
     .map((_, el) => $(el).text().trim())
@@ -69,6 +134,7 @@ export async function fetchAndParseDuel(url: string): Promise<ParsedDuel> {
     a: { name: names[0] ?? "Produk A", score: scores[0] ?? 0 },
     b: { name: names[1] ?? "Produk B", score: scores[1] ?? 0 },
     specs,
+    verdict,
   };
 }
 
@@ -93,6 +159,7 @@ export type ScrapeDebugResult = {
   rulingWindow: string | null;
   booleanRowWindow: string | null;
   scoreRingBlocks: string[];
+  parsedPreview: ParsedDuel | { error: string };
 };
 
 export async function debugScrapeVersus(url: string): Promise<ScrapeDebugResult> {
@@ -173,6 +240,28 @@ export async function debugScrapeVersus(url: string): Promise<ScrapeDebugResult>
     if (outer) scoreRingBlocks.push(outer.slice(0, 500));
   });
 
+  // 6. Coba parser produksi langsung di sini juga, biar sekali buka link
+  //    kita liat hasil parse-nya, bukan cuma raw HTML.
+  let parsedPreview: ScrapeDebugResult["parsedPreview"];
+  try {
+    const specs = parseLedgerTable(html);
+    const verdict = parseRuling(html);
+    const names = $(".duo .side h1, .duo .side .h1")
+      .map((_, el) => $(el).text().trim())
+      .get();
+    const scores = $(".scorering span")
+      .map((_, el) => Number($(el).text().trim()))
+      .get();
+    parsedPreview = {
+      a: { name: names[0] ?? "Produk A", score: scores[0] ?? 0 },
+      b: { name: names[1] ?? "Produk B", score: scores[1] ?? 0 },
+      specs,
+      verdict,
+    };
+  } catch (err) {
+    parsedPreview = { error: String(err) };
+  }
+
   return {
     sourceUrl: url,
     status,
@@ -192,5 +281,6 @@ export async function debugScrapeVersus(url: string): Promise<ScrapeDebugResult>
     rulingWindow,
     booleanRowWindow,
     scoreRingBlocks,
+    parsedPreview,
   };
 }
