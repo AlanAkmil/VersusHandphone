@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { SpecRow as SpecRowType } from "@/lib/types/product";
 
 function getWinner(row: SpecRowType): "a" | "b" | null {
+  if (row.winnerSide) return row.winnerSide;
   if (row.higherIsBetter === undefined) return null;
   if (row.a.numeric === undefined || row.b.numeric === undefined) return null;
   if (row.a.numeric === row.b.numeric) return null;
