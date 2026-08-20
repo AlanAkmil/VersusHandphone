@@ -23,13 +23,17 @@ export default function ProductPanel({
       className={`flex flex-1 items-center justify-between gap-4 rounded-2xl border ${border} bg-panel/60 p-6 backdrop-blur-sm`}
     >
       <div>
-        <p className="font-mono text-xs uppercase tracking-[0.25em] text-mist">
-          {product.brand} · {product.releaseYear}
-        </p>
+        {(product.brand || product.releaseYear) && (
+          <p className="font-mono text-xs uppercase tracking-[0.25em] text-mist">
+            {[product.brand, product.releaseYear].filter(Boolean).join(" · ")}
+          </p>
+        )}
         <h2 className={`mt-2 font-display text-2xl font-semibold ${accent}`}>
           {product.name}
         </h2>
-        <p className="mt-1 font-mono text-xs text-mist">{product.priceLabel}</p>
+        {product.priceLabel && (
+          <p className="mt-1 font-mono text-xs text-mist">{product.priceLabel}</p>
+        )}
       </div>
       <ScoreRing score={product.score} side={side} />
     </motion.div>
