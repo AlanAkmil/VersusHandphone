@@ -10,6 +10,9 @@ export type SpecRow = {
   a: SpecValue;
   b: SpecValue;
   higherIsBetter?: boolean;
+  /** Dipakai kalau sumber data (mis. Versus) udah nentuin pemenang langsung,
+   *  tanpa kita perlu itung dari `numeric`. */
+  winnerSide?: "a" | "b";
 };
 
 export type Product = {
